@@ -15,6 +15,8 @@ func main() {
 
 	fmt.Println("No. of Goroutines", runtime.NumGoroutine())
 
+	// not best practices
+	// for waiting the first process to be finished
 	time.Sleep(time.Second * 2)
 
 	fmt.Println("main execution ended")
