@@ -1,41 +1,53 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+	"time"
+)
 
-// Deklarasi Interface
-type DataInterface1 interface {
-	RetrieveData() []string
-}
-
-type Data1 struct {
+type Data struct {
 	words []string
 }
 
-func (d Data1) RetrieveData() []string {
-	return d.words
+func printData(data Data, index int) {
+	fmt.Printf("%v %d\n", data.words, index)
+}
+
+func printDataWithMutex(data Data, index int, mutex *sync.Mutex, wg *sync.WaitGroup) {
+	defer wg.Done()
+	mutex.Lock()
+	fmt.Printf("%v %d\n", data.words, index)
+	mutex.Unlock()
+}
+
+func printDataRandomly(data1 Data, data2 Data) {
+	for i := 0; i < 4; i++ {
+		go printData(data1, i+1)
+		go printData(data2, i+1)
+	}
+}
+
+func printDataNeatly(data1 Data, data2 Data, mutex *sync.Mutex, wg *sync.WaitGroup) {
+	for i := 0; i < 4; i++ {
+		wg.Add(2)
+		go printDataWithMutex(data1, i+1, mutex, wg)
+		go printDataWithMutex(data2, i+1, mutex, wg)
+		wg.Wait()
+	}
 }
 
 func main() {
-	// deklarasi variabel c bertipe chan []string
-	c := make(chan []string)
+	data1 := Data{words: []string{"bisa1", "bisa2", "bisa3"}}
+	data2 := Data{words: []string{"coba1", "coba2", "coba3"}}
 
-	data1 := Data1{words: []string{"bisa1", "bisa2", "bisa3"}}
-	data2 := Data1{words: []string{"coba1", "coba2", "coba3"}}
+	var mutex = &sync.Mutex{}
+	var wg = &sync.WaitGroup{}
 
-	for i := 0; i < 4; i++ {
-		go sendAndRetrieveData(data1, i+1, c)
-	}
+	printDataRandomly(data1, data2)
+	time.Sleep(2 * time.Second)
 
-	for i := 0; i < 4; i++ {
-		go sendAndRetrieveData(data2, i+1, c)
-	}
+	fmt.Printf("---------------------------------------------\n")
 
-	for i := 0; i < 8; i++ {
-		data := <-c
-		fmt.Println(data)
-	}
-}
-
-func sendAndRetrieveData(dataRetriever DataInterface1, index int, c chan []string) {
-	c <- dataRetriever.RetrieveData()
+	printDataNeatly(data1, data2, mutex, wg)
 }
