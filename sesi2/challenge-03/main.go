@@ -1,10 +1,11 @@
 package main
 
 import (
-	// "challenge-03/routers"
 	"database/sql"
 	"fmt"
+	"net/http"
 
+	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 )
 
@@ -13,7 +14,7 @@ const (
 	port     = 5432
 	user     = "postgres"
 	password = "ssasongko"
-	dbname   = "hacktiv8_employees"
+	dbname   = "hacktiv8_books"
 )
 
 var (
@@ -38,16 +39,15 @@ func main() {
 		panic(err)
 	}
 
-	fmt.Println("Successfully connected to database!")
+	r := gin.Default()
+	r.GET("/books", GetBooksHandler)
+	r.GET("/books/:bookID", GetBookHandler)
+	r.POST("/book", CreateBookHandler)
+	r.PATCH("/book/:bookID", UpdateBookHandler)
+	r.DELETE("/book/:bookID", DeleteBookHandler)
 
-	// CreateBook()
-	// GetBooks()
-	// UpdateBook()
-	DeleteBook()
-
-	// var PORT = ":8080"
-
-	// routers.StartServer().Run(PORT)
+	var PORT = ":8080"
+	r.Run(PORT)
 }
 
 type Book struct {
@@ -57,26 +57,7 @@ type Book struct {
 	Description string
 }
 
-func CreateBook() {
-	var book = Book{}
-
-	sqlStatement := `
-		INSERT INTO books (title, author, description) 
-		VALUES ($1, $2, $3) 
-		RETURNING *
-	`
-
-	err = db.QueryRow(sqlStatement, "The Little Book of Ikigai", "Ken Mogi", "Japanese Concept").
-		Scan(&book.ID, &book.Title, &book.Author, &book.Description)
-
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Printf("New book data: %v has been created\n", book)
-}
-
-func GetBooks() {
+func GetBooksHandler(ctx *gin.Context) {
 	var results = []Book{}
 
 	sqlStatement := `SELECT * FROM books`
@@ -100,44 +81,114 @@ func GetBooks() {
 		results = append(results, book)
 	}
 
-	fmt.Printf("All books data: %v\n", results)
+	ctx.JSON(http.StatusOK, gin.H{
+		"books": results,
+	})
 }
 
-func UpdateBook() {
-	sqlStatement := `
-		UPDATE books
-		SET title = $2, author = $3, description = $4
-		WHERE id = $1
-	`
-	res, err := db.Exec(sqlStatement, 1, "Buku Filsafat", "Winawati", "Buku Best Seller terbaru dari Winawati")
+func GetBookHandler(ctx *gin.Context) {
+	var book Book
+
+	row := db.QueryRow("SELECT * FROM books WHERE id = $1", ctx.Param("bookID"))
+	err = row.Scan(&book.ID, &book.Title, &book.Author, &book.Description)
 
 	if err != nil {
-		panic(err)
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "Book not found"})
+		return
 	}
-
-	count, err := res.RowsAffected()
-	if err != nil {
-		panic(err)
-	}
-
-	fmt.Printf("Updated %d book data", count)
+	ctx.JSON(http.StatusOK, gin.H{
+		"books": book,
+	})
 }
 
-func DeleteBook() {
-	sqlStatement := `
-		DELETE FROM books
-		WHERE id = $1
-	`
-	res, err := db.Exec(sqlStatement, 3)
+func CreateBookHandler(ctx *gin.Context) {
+	var book Book
 
+	err := ctx.BindJSON(&book)
 	if err != nil {
-		panic(err)
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
-	count, err := res.RowsAffected()
+	var id int
+	err = db.QueryRow("INSERT INTO books (title, author, description) VALUES ($1, $2, $3) RETURNING id", book.Title, book.Author, book.Description).Scan(&id)
 	if err != nil {
-		panic(err)
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create book"})
+		return
 	}
 
-	fmt.Printf("Deleted %d book data", count)
+	book.ID = id
+	ctx.JSON(http.StatusOK, gin.H{
+		"books": book,
+	})
+}
+
+func UpdateBookHandler(ctx *gin.Context) {
+	bookID := ctx.Param("bookID")
+
+	var book Book
+	err := ctx.BindJSON(&book)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request payload"})
+		return
+	}
+
+	var existingBook Book
+	err = db.QueryRow("SELECT id, title, author, description FROM books WHERE id = $1", bookID).Scan(&existingBook.ID, &existingBook.Title, &existingBook.Author, &existingBook.Description)
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "Book not found"})
+		return
+	}
+
+	if book.Title != "" {
+		existingBook.Title = book.Title
+	}
+	if book.Author != "" {
+		existingBook.Author = book.Author
+	}
+	if book.Description != "" {
+		existingBook.Description = book.Description
+	}
+
+	_, err = db.Exec("UPDATE books SET title=$1, author=$2, description=$3 WHERE id=$4", existingBook.Title, existingBook.Author, existingBook.Description, existingBook.ID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"books": existingBook,
+	})
+}
+
+func DeleteBookHandler(ctx *gin.Context) {
+	var book Book
+	bookID := ctx.Param("bookID")
+
+	row := db.QueryRow("SELECT * FROM books WHERE id = $1", ctx.Param("bookID"))
+	err = row.Scan(&book.ID, &book.Title, &book.Author, &book.Description)
+
+	if err != nil {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "Book not found"})
+		return
+	}
+
+	result, err := db.Exec("DELETE FROM books WHERE id = $1", bookID)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "Database error"})
+		return
+	}
+
+	if rowsAffected == 0 {
+		ctx.JSON(http.StatusNotFound, gin.H{"error": "Book not found"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "Book deleted successfully"})
 }
