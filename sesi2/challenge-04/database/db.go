@@ -15,11 +15,9 @@ var (
 	user     = "postgres"
 	password = "ssasongko"
 	dbname   = "hacktiv8_challenge4"
-	db       *gorm.DB
-	err      error
 )
 
-func StartDB() {
+func InitDatabase() (*gorm.DB, error) {
 	config := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=disable", host, port, user, password, dbname)
 
 	db, err := gorm.Open(postgres.Open(config), &gorm.Config{})
@@ -28,8 +26,6 @@ func StartDB() {
 	}
 
 	db.Debug().AutoMigrate(models.Book{})
-}
 
-func GetDB() *gorm.DB {
-	return db
+	return db, nil
 }

@@ -2,40 +2,25 @@ package main
 
 import (
 	"challenge-04/database"
-	"challenge-04/models"
-	"fmt"
+	"challenge-04/handler"
+
+	"github.com/gin-gonic/gin"
 )
 
-// type User struct {
-// 	gorm.Model
-// 	Name  string `json:"name"`
-// 	Email string `json:"email"`
-// }
-
 func main() {
-	database.StartDB()
-
-	createBook()
-}
-
-func createBook() {
-	db := database.GetDB()
-
-	Book := models.Book{
-		ID:          7,
-		Title:       "The Alchemist",
-		Author:      "Paulo Coelho",
-		Description: "The Alchemist is a novel by Paulo Coelho",
-	}
-
-	fmt.Println(Book, db)
-
-	err := db.Create(&Book).Error
-
+	db, err := database.InitDatabase()
 	if err != nil {
-		fmt.Println("Error creating user data: ", err)
-		return
+		panic(err)
 	}
 
-	fmt.Println("User created successfully")
+	r := gin.Default()
+	bookHandler := handler.NewBookHandler(db)
+
+	r.GET("/books", bookHandler.GetBooks)
+	r.POST("/books", bookHandler.CreateBook)
+	r.GET("/books/:id", bookHandler.GetBookByID)
+	r.PATCH("/books/:id", bookHandler.UpdateBook)
+	r.DELETE("/books/:id", bookHandler.DeleteBook)
+
+	r.Run(":8080")
 }
